@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Trophy, TrendingUp, MapPin, Target, Calendar, RefreshCw } from 'lucide-react';
-import GoldPriceService from '../services/goldPriceService';
+import { Activity, Trophy, TrendingUp, MapPin, Target, Calendar, RefreshCw, BarChart3 } from 'lucide-react';
+import GoldPriceService, { GoldPriceData, DailyGoldPrice } from '../services/goldPriceService';
 import GoogleIntegrationService from '../services/googleIntegrationService';
 
 interface KilometerData {
@@ -17,25 +17,9 @@ interface Match {
   score: string;
 }
 
-interface GoldPriceData {
-  price: number;
-  change: number;
-  changePercent: number;
-  lastUpdate: string;
-}
-
-interface DailyGoldPrice {
-  date: string;
-  day: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  isToday: boolean;
-}
-
 const Dashboard: React.FC = () => {
   const [goldPriceData, setGoldPriceData] = useState<GoldPriceData>({
-    price: 85.25,
+    price: 84.59,
     change: 0,
     changePercent: 0,
     lastUpdate: new Date().toISOString()
@@ -60,63 +44,22 @@ const Dashboard: React.FC = () => {
   const [isLoadingGold, setIsLoadingGold] = useState(false);
   const [isLoadingKm, setIsLoadingKm] = useState(false);
 
-  // Generar precios diarios de la semana
-  const generateWeeklyGoldPrices = (currentPrice: number): DailyGoldPrice[] => {
-    const today = new Date();
-    const weekDays = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const dailyPrices: DailyGoldPrice[] = [];
-    
-    // Generar datos para los últimos 7 días
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(today.getDate() - i);
-      
-      const isToday = i === 0;
-      const dayName = weekDays[date.getDay()];
-      
-      // Simular variaciones realistas del precio del oro
-      let price: number;
-      let changePercent: number;
-      
-      if (isToday) {
-        price = currentPrice;
-        changePercent = goldPriceData.changePercent;
-      } else {
-        // Generar precios históricos con variaciones realistas
-        const baseVariation = (Math.random() - 0.5) * 3; // ±1.5%
-        const dayPrice = currentPrice * (1 + (baseVariation / 100));
-        price = Math.max(dayPrice, 80); // Mínimo 80 EUR
-        changePercent = baseVariation;
-      }
-      
-      const change = price * (changePercent / 100);
-      
-      dailyPrices.push({
-        date: date.toISOString().split('T')[0],
-        day: dayName,
-        price: price,
-        change: change,
-        changePercent: changePercent,
-        isToday: isToday
-      });
-    }
-    
-    return dailyPrices;
-  };
-
   // Configurar servicio de precio del oro
   useEffect(() => {
     const goldService = GoldPriceService.getInstance();
     
     const unsubscribe = goldService.subscribe((data: GoldPriceData) => {
       setGoldPriceData(data);
-      
-      // Actualizar precios diarios de la semana
-      const weeklyPrices = generateWeeklyGoldPrices(data.price);
-      setDailyGoldPrices(weeklyPrices);
     });
 
-    return unsubscribe;
+    const unsubscribeDailyPrices = goldService.subscribeDailyPrices((data: DailyGoldPrice[]) => {
+      setDailyGoldPrices(data);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeDailyPrices();
+    };
   }, []);
 
   // Cargar datos de kilómetros desde Google
@@ -185,6 +128,11 @@ const Dashboard: React.FC = () => {
     winRate: (recentMatches.filter(m => m.result === 'win').length / recentMatches.length) * 100
   };
 
+  // Calcular el precio máximo para la gráfica
+  const maxPrice = Math.max(...dailyGoldPrices.map(d => d.price));
+  const minPrice = Math.min(...dailyGoldPrices.map(d => d.price));
+  const priceRange = maxPrice - minPrice;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -195,7 +143,7 @@ const Dashboard: React.FC = () => {
           <div className="mt-4 flex items-center space-x-4 text-sm text-gray-500">
             <div className="flex items-center space-x-1">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span>Precio oro en tiempo real</span>
+              <span>Precio oro en tiempo real (€/gramo)</span>
             </div>
             <div className="flex items-center space-x-1">
               <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -333,16 +281,56 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Gold Price Chart - Updated with daily prices */}
+          {/* Gold Price Chart - Actualizado con gráfica visual */}
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-gray-900">Precio del Oro (€/gramo)</h2>
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 <div className="text-xs text-gray-500">Tiempo Real</div>
-                <TrendingUp className="h-5 w-5 text-gray-400" />
+                <BarChart3 className="h-5 w-5 text-gray-400" />
               </div>
             </div>
+            
+            {/* Gráfica visual de barras */}
+            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-end justify-between h-32 space-x-1">
+                {dailyGoldPrices.map((data, index) => {
+                  const heightPercent = priceRange > 0 ? ((data.price - minPrice) / priceRange) * 100 : 50;
+                  const barHeight = Math.max(heightPercent, 10); // Mínimo 10% de altura
+                  
+                  return (
+                    <div key={index} className="flex-1 flex flex-col items-center">
+                      <div className="w-full flex flex-col items-center">
+                        <div
+                          className={`w-full rounded-t transition-all duration-500 ${
+                            data.changePercent > 0 
+                              ? 'bg-green-500' 
+                              : data.changePercent < 0 
+                              ? 'bg-red-500'
+                              : 'bg-gray-400'
+                          } ${data.isToday ? 'animate-pulse shadow-lg' : ''}`}
+                          style={{ height: `${barHeight}%` }}
+                        ></div>
+                        <div className="text-xs text-gray-600 mt-1 text-center">
+                          {data.day.substring(0, 3)}
+                        </div>
+                        <div className={`text-xs font-medium ${
+                          data.changePercent > 0 
+                            ? 'text-green-600' 
+                            : data.changePercent < 0 
+                            ? 'text-red-600'
+                            : 'text-gray-600'
+                        }`}>
+                          €{data.price.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="space-y-3">
               {dailyGoldPrices.map((data, index) => (
                 <div key={index} className={`flex items-center justify-between p-4 rounded-lg transition-colors ${
@@ -409,7 +397,12 @@ const Dashboard: React.FC = () => {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-yellow-900">
+                  <p className={`text-lg font-bold ${
+                    dailyGoldPrices.length > 0 && dailyGoldPrices[0] && 
+                    (dailyGoldPrices[dailyGoldPrices.length - 1].price - dailyGoldPrices[0].price) > 0
+                      ? 'text-green-700' 
+                      : 'text-red-700'
+                  }`}>
                     {dailyGoldPrices.length > 0 && dailyGoldPrices[0] ? 
                       `€${(dailyGoldPrices[dailyGoldPrices.length - 1].price - dailyGoldPrices[0].price).toFixed(2)}`
                       : '€0.00'
@@ -463,7 +456,7 @@ const Dashboard: React.FC = () => {
             <div className="flex items-center justify-between p-3 bg-white rounded-lg">
               <div className="flex items-center space-x-3">
                 <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="font-medium text-gray-900">Precio del Oro</span>
+                <span className="font-medium text-gray-900">Precio del Oro (inversoro.es)</span>
               </div>
               <span className="text-sm text-green-600 font-medium">Activo</span>
             </div>
@@ -477,8 +470,9 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
             <p className="text-sm text-yellow-800">
-              <strong>Nota:</strong> Para conectar completamente con Google Drive y Gmail (denisvela30@gmail.com), 
-              necesitas configurar las credenciales de Google API. Los datos actuales son simulados pero realistas.
+              <strong>Nota:</strong> Los precios del oro se basan en datos de inversoro.es (€/gramo). 
+              Para conectar completamente con Google Drive y Gmail (denisvela30@gmail.com), 
+              necesitas configurar las credenciales de Google API.
             </p>
           </div>
         </div>
