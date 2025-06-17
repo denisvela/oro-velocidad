@@ -1,8 +1,8 @@
 import React from 'react';
-import Dashboard from './components/Dashboard';
+import GoldDashboard from './components/GoldDashboard';
 
 function App() {
-  return <Dashboard />;
+  return <GoldDashboard />;
 }
 
 export default App;
